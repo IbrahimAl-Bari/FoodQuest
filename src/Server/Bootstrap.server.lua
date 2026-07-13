@@ -1,0 +1,13 @@
+local InventoryService = require(script.Parent.Services.InventoryService)
+local ProgressionService = require(script.Parent.Services.ProgressionService)
+local PlayerUIService = require(script.Parent.Services.PlayerUIService)
+local CookingService = require(script.Parent.Services.CookingService)
+local IngredientPickupService = require(script.Parent.Services.IngredientPickupService)
+local ObbyRewardService = require(script.Parent.Services.ObbyRewardService)
+
+InventoryService:Init()
+ProgressionService:Init()
+PlayerUIService:Init()
+CookingService:Init()
+IngredientPickupService:Init()
+ObbyRewardService:Init()
