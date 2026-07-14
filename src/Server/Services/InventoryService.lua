@@ -1,25 +1,9 @@
-local Players = game:GetService("Players")
+local DataService = require(script.Parent:WaitForChild("DataService"))
 
-local Foods = require(game:GetService("ReplicatedStorage"):WaitForChild("Config"):WaitForChild("Foods"))
 local Ingredients = require(game:GetService("ReplicatedStorage"):WaitForChild("Config"):WaitForChild("Ingredients"))
 
 local InventoryService = {}
 InventoryService.InventoryChanged = Instance.new("BindableEvent")
-
-local inventories = {}
-
-local function getOrCreateInventory(player)
-	local inventory = inventories[player]
-	if inventory == nil then
-		inventory = {
-			ingredients = {},
-			foods = {},
-		}
-		inventories[player] = inventory
-	end
-
-	return inventory
-end
 
 local function copyItemMap(items)
 	local copy = {}
@@ -56,11 +40,16 @@ function InventoryService:AddIngredient(player, ingredientId, amount)
 		return false, "InvalidAmount"
 	end
 
-	local inventory = getOrCreateInventory(player)
-	inventory.ingredients[ingredientId] = (inventory.ingredients[ingredientId] or 0) + amount
-	InventoryService.InventoryChanged:Fire(player, copyInventory(inventory))
+	local data = DataService:GetData(player, "Inventory")
+	if not data then
+		return false, "NoSession"
+	end
 
-	return true, inventory.ingredients[ingredientId]
+	data.ingredients[ingredientId] = (data.ingredients[ingredientId] or 0) + amount
+	DataService:SetDirty(player)
+	InventoryService.InventoryChanged:Fire(player, copyInventory(data))
+
+	return true, data.ingredients[ingredientId]
 end
 
 function InventoryService:GetIngredientCount(player, ingredientId)
@@ -68,12 +57,12 @@ function InventoryService:GetIngredientCount(player, ingredientId)
 		return 0
 	end
 
-	local inventory = inventories[player]
-	if inventory == nil then
+	local data = DataService:GetData(player, "Inventory")
+	if not data then
 		return 0
 	end
 
-	return inventory.ingredients[ingredientId] or 0
+	return data.ingredients[ingredientId] or 0
 end
 
 function InventoryService:GetInventorySnapshot(player)
@@ -81,7 +70,8 @@ function InventoryService:GetInventorySnapshot(player)
 		return {}
 	end
 
-	return copyInventory(inventories[player])
+	local data = DataService:GetData(player, "Inventory")
+	return copyInventory(data)
 end
 
 function InventoryService:AddIngredients(player, ingredients)
@@ -102,50 +92,53 @@ function InventoryService:AddIngredients(player, ingredients)
 		end
 	end
 
-	local inventory = getOrCreateInventory(player)
-	for ingredientId, amount in pairs(ingredients) do
-		inventory.ingredients[ingredientId] = (inventory.ingredients[ingredientId] or 0) + amount
+	local data = DataService:GetData(player, "Inventory")
+	if not data then
+		return false, "NoSession"
 	end
-	InventoryService.InventoryChanged:Fire(player, copyInventory(inventory))
+
+	for ingredientId, amount in pairs(ingredients) do
+		data.ingredients[ingredientId] = (data.ingredients[ingredientId] or 0) + amount
+	end
+	DataService:SetDirty(player)
+	InventoryService.InventoryChanged:Fire(player, copyInventory(data))
 
 	return true
 end
 
-function InventoryService:ConsumeIngredientsAndAddFood(player, requiredIngredients, foodId, foodAmount)
+function InventoryService:ConsumeIngredients(player, requiredIngredients)
 	if not (player and player:IsA("Player")) or typeof(requiredIngredients) ~= "table" then
 		return false, "InvalidRequest"
-	end
-	if Foods[foodId] == nil or typeof(foodAmount) ~= "number" or foodAmount <= 0 or foodAmount % 1 ~= 0 then
-		return false, "InvalidFood"
 	end
 	if next(requiredIngredients) == nil then
 		return false, "EmptyRecipe"
 	end
 
-	local inventory = getOrCreateInventory(player)
+	local data = DataService:GetData(player, "Inventory")
+	if not data then
+		return false, "NoSession"
+	end
+
 	for ingredientId, amount in pairs(requiredIngredients) do
 		if Ingredients[ingredientId] == nil or typeof(amount) ~= "number" or amount <= 0 or amount % 1 ~= 0 then
 			return false, "InvalidIngredients"
 		end
-		if (inventory.ingredients[ingredientId] or 0) < amount then
+		if (data.ingredients[ingredientId] or 0) < amount then
 			return false, "InsufficientIngredients"
 		end
 	end
 
 	for ingredientId, amount in pairs(requiredIngredients) do
-		local remaining = inventory.ingredients[ingredientId] - amount
-		inventory.ingredients[ingredientId] = remaining > 0 and remaining or nil
+		local remaining = data.ingredients[ingredientId] - amount
+		data.ingredients[ingredientId] = remaining > 0 and remaining or nil
 	end
-	inventory.foods[foodId] = (inventory.foods[foodId] or 0) + foodAmount
-	InventoryService.InventoryChanged:Fire(player, copyInventory(inventory))
+	DataService:SetDirty(player)
+	InventoryService.InventoryChanged:Fire(player, copyInventory(data))
 
 	return true
 end
 
 function InventoryService:Init()
-	Players.PlayerRemoving:Connect(function(player)
-		inventories[player] = nil
-	end)
 end
 
 return InventoryService

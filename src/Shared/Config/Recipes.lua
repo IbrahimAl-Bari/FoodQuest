@@ -13,7 +13,6 @@ return {
 		displayName = "Cheese Pizza",
 		ingredients = {
 			Flour = 2,
-			Tomato = 1,
 			Cheese = 1,
 		},
 		outputFoodId = "CheesePizza",

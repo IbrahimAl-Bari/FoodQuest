@@ -6,10 +6,13 @@ local Foods = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("Foo
 local Ingredients = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("Ingredients"))
 local Recipes = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("Recipes"))
 local RemoteNames = require(ReplicatedStorage:WaitForChild("Network"):WaitForChild("RemoteNames"))
+local DisplayCounterService = require(script.Parent:WaitForChild("DisplayCounterService"))
 local InventoryService = require(script.Parent:WaitForChild("InventoryService"))
 local PlayerUIService = require(script.Parent:WaitForChild("PlayerUIService"))
 
 local CookingService = {}
+
+CookingService.CookingChanged = Instance.new("BindableEvent")
 
 local STATION_TAG = "CookingStation"
 local ACTIVE_STATION_SECONDS = 15
@@ -38,7 +41,12 @@ end
 local function isPlayerNearStation(player, station, maxDistance)
 	local character = player.Character
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-	return rootPart ~= nil and (rootPart.Position - station.Position).Magnitude <= maxDistance
+	if not rootPart then
+		return false
+	end
+	local state = stations[station]
+	local part = state and state.part or station
+	return (rootPart.Position - part.Position).Magnitude <= maxDistance
 end
 
 local function sendFailure(player, message)
@@ -88,16 +96,24 @@ local function cookRecipe(player, recipeId)
 
 	local recipe = Recipes[recipeId]
 	if recipe == nil then
+		warn("[CookingService] Invalid recipeId:", recipeId)
 		sendFailure(player, "That recipe is unavailable.")
 		return
 	end
+	warn("[CookingService] Recipe found:", recipeId, "output:", recipe.outputFoodId)
 
-	local success, reason = InventoryService:ConsumeIngredientsAndAddFood(
-		player,
-		recipe.ingredients,
-		recipe.outputFoodId,
-		recipe.outputAmount
-	)
+	local counterId = DisplayCounterService:GetDefaultCounterId()
+	warn("[CookingService] counterId:", counterId)
+
+	local hasSpace, spaceReason = DisplayCounterService:CanPlaceFood(player, counterId, recipe.outputFoodId, recipe.outputAmount)
+	warn("[CookingService] CanPlaceFood:", hasSpace, spaceReason)
+	if not hasSpace then
+		sendFailure(player, "Your display counter is full.")
+		return
+	end
+
+	local success, reason = InventoryService:ConsumeIngredients(player, recipe.ingredients)
+	warn("[CookingService] ConsumeIngredients:", success, reason)
 	if not success then
 		if reason == "InsufficientIngredients" then
 			sendFailure(player, "You do not have the required ingredients.")
@@ -107,11 +123,33 @@ local function cookRecipe(player, recipeId)
 		return
 	end
 
+	-- Counter capacity was checked immediately before this non-yielding server operation.
+	local placed, placeReason = DisplayCounterService:PlaceFood(player, counterId, recipe.outputFoodId, recipe.outputAmount)
+	warn("[CookingService] PlaceFood:", placed, placeReason)
+	if not placed then
+		warn("Cooking consumed ingredients but could not place food:", placeReason)
+		sendFailure(player, "Cooking failed. Please try again.")
+		return
+	end
+
+	warn("[CookingService] Cook successful, food placed:", recipe.outputFoodId)
 	PlayerUIService:SendNotification(player, {
 		kind = "CookingCompleted",
 		foodId = recipe.outputFoodId,
 		amount = recipe.outputAmount,
 	})
+
+	CookingService.CookingChanged:Fire(player, recipeId, recipe.outputFoodId, recipe.outputAmount)
+end
+
+local function getStationPart(station)
+	if station:IsA("BasePart") then
+		return station
+	end
+	if station:IsA("Model") then
+		return station.PrimaryPart or station:FindFirstChildWhichIsA("BasePart")
+	end
+	return nil
 end
 
 local function registerStation(station)
@@ -119,12 +157,13 @@ local function registerStation(station)
 		return
 	end
 
-	if not station:IsA("BasePart") then
+	local part = getStationPart(station)
+	if not part then
 		warn("CookingStation tag requires a BasePart:", station:GetFullName())
 		return
 	end
 
-	local prompt = station:FindFirstChild("CookingPrompt")
+	local prompt = part:FindFirstChild("CookingPrompt")
 	local createdPrompt = false
 	if prompt == nil then
 		prompt = Instance.new("ProximityPrompt")
@@ -133,7 +172,7 @@ local function registerStation(station)
 		prompt.ObjectText = "Cooking Station"
 		prompt.MaxActivationDistance = 10
 		prompt.RequiresLineOfSight = false
-		prompt.Parent = station
+		prompt.Parent = part
 		createdPrompt = true
 	end
 
@@ -144,6 +183,7 @@ local function registerStation(station)
 
 	stations[station] = {
 		prompt = prompt,
+		part = part,
 		createdPrompt = createdPrompt,
 		connection = prompt.Triggered:Connect(function(player)
 			openCookingMenu(player, station, prompt)

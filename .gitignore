@@ -1,0 +1,13 @@
+# Roblox Studio
+*.rbxl
+*.rbxlx
+*.rbxm
+
+# OS files
+.DS_Store
+
+# Temporary files
+*.tmp
+
+# Node (if added later)
+node_modules/
