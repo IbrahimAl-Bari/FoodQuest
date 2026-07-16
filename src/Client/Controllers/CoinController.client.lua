@@ -10,7 +10,8 @@ local CoinUI = require(script.Parent.Parent.UI:WaitForChild("CoinUI"))
 
 local getCoinBalance = networkFolder:WaitForChild(RemoteNames.GetCoinBalance)
 local coinBalanceUpdated = networkFolder:WaitForChild(RemoteNames.CoinBalanceUpdated)
-local coinUI = CoinUI.new(playerGui)
+local mainUI = playerGui:WaitForChild("MainUI")
+local coinUI = CoinUI.new(mainUI:WaitForChild("HUD"))
 
 local function renderCoins(coins)
 	if typeof(coins) == "number" and coins >= 0 then

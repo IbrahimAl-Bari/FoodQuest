@@ -9,6 +9,7 @@ local RemoteNames = require(ReplicatedStorage:WaitForChild("Network"):WaitForChi
 local DisplayCounterService = require(script.Parent:WaitForChild("DisplayCounterService"))
 local InventoryService = require(script.Parent:WaitForChild("InventoryService"))
 local PlayerUIService = require(script.Parent:WaitForChild("PlayerUIService"))
+local RestaurantService = require(script.Parent:WaitForChild("RestaurantService"))
 
 local CookingService = {}
 
@@ -91,6 +92,11 @@ local function cookRecipe(player, recipeId)
 		or not isPlayerNearStation(player, station, stationState.prompt.MaxActivationDistance + DISTANCE_TOLERANCE) then
 		activeStations[player] = nil
 		sendFailure(player, "Move closer to the cooking station.")
+		return
+	end
+
+	if not RestaurantService:CanPlayerUseObject(player, station) then
+		sendFailure(player, "This cooking station belongs to someone else.")
 		return
 	end
 

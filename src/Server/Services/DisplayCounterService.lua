@@ -38,13 +38,20 @@ local function getOrCreateSlots(player, counterId)
 		return nil
 	end
 
+	local slotCount = getDefinition(counterId).slotCount
 	local slots = playerCounters[counterId]
 	if slots == nil then
 		slots = {}
-		for slotIndex = 1, getDefinition(counterId).slotCount do
+		for slotIndex = 1, slotCount do
 			slots[slotIndex] = false
 		end
 		playerCounters[counterId] = slots
+	else
+		for slotIndex = 1, slotCount do
+			if slots[slotIndex] == nil then
+				slots[slotIndex] = false
+			end
+		end
 	end
 
 	return slots
@@ -97,14 +104,15 @@ function DisplayCounterService:CanPlaceFood(player, counterId, foodId, amount)
 		return false, "InvalidAmount"
 	end
 
+	local definition = getDefinition(counterId)
 	local slots = getOrCreateSlots(player, counterId)
 	if not slots then
 		return false, "NoSession"
 	end
 
 	local freeSlots = 0
-	for _, foodInSlot in slots do
-		if foodInSlot == false then
+	for slotIndex = 1, definition.slotCount do
+		if slots[slotIndex] == false then
 			freeSlots += 1
 		end
 	end
@@ -122,14 +130,15 @@ function DisplayCounterService:PlaceFood(player, counterId, foodId, amount)
 		return false, reason
 	end
 
+	local definition = getDefinition(counterId)
 	local slots = getOrCreateSlots(player, counterId)
 	if not slots then
 		return false, "NoSession"
 	end
 
 	local remaining = amount
-	for slotIndex, foodInSlot in slots do
-		if foodInSlot == false then
+	for slotIndex = 1, definition.slotCount do
+		if slots[slotIndex] == false then
 			slots[slotIndex] = foodId
 			remaining -= 1
 			self.FoodPlaced:Fire(player, counterId, foodId, slotIndex)
@@ -149,12 +158,14 @@ function DisplayCounterService:TakeFirstFood(player, counterId)
 		return false, "InvalidRequest"
 	end
 
+	local definition = getDefinition(counterId)
 	local slots = getOrCreateSlots(player, counterId)
 	if not slots then
 		return false, "NoSession"
 	end
 
-	for slotIndex, foodId in slots do
+	for slotIndex = 1, definition.slotCount do
+		local foodId = slots[slotIndex]
 		if foodId ~= false then
 			slots[slotIndex] = false
 			DataService:SetDirty(player)
@@ -168,36 +179,37 @@ function DisplayCounterService:TakeFirstFood(player, counterId)
 end
 
 function DisplayCounterService:TakeFoodById(player, counterId, foodId)
-	warn("[DisplayCounterService] TakeFoodById called: player=", player, "counterId=", counterId, "foodId=", foodId)
-
+	warn("[DCS] TakeFoodById ENTER: player=", player and player.Name, "counterId=", counterId, "foodId=", foodId)
+	warn("[DCS] Validation: isPlayer=", player and player:IsA("Player"), "counterDef=", getDefinition(counterId), "foodType=", typeof(foodId))
 	if not (player and player:IsA("Player")) or getDefinition(counterId) == nil or typeof(foodId) ~= "string" then
-		warn("[DisplayCounterService] InvalidRequest: player=", player, "counterDef=", getDefinition(counterId), "foodType=", typeof(foodId))
+		warn("[DCS] EARLY RETURN: InvalidRequest")
 		return false, "InvalidRequest"
 	end
 
+	local definition = getDefinition(counterId)
 	local slots = getOrCreateSlots(player, counterId)
+	warn("[DCS] getOrCreateSlots returned: slots=", slots and "table" or "nil")
 	if not slots then
-		warn("[DisplayCounterService] NoSession - getOrCreateSlots returned nil")
+		warn("[DCS] EARLY RETURN: NoSession")
 		return false, "NoSession"
 	end
 
-	warn("[DisplayCounterService] Slots dump:")
-	for i, v in slots do
-		warn("  slot", i, "=", v, "(", typeof(v), ")")
-	end
-
-	for slotIndex, slotFood in slots do
+	warn("[DCS] definition.slotCount=", definition.slotCount)
+	for slotIndex = 1, definition.slotCount do
+		local slotFood = slots[slotIndex]
+		warn("[DCS]   Slot", slotIndex, "=", slotFood, "(", typeof(slotFood), ")")
 		if slotFood == foodId then
-			warn("[DisplayCounterService] Found match at slot", slotIndex)
+			warn("[DCS] MATCH at slot", slotIndex)
 			slots[slotIndex] = false
 			DataService:SetDirty(player)
 			sendUpdate(player, counterId)
 			self.FoodRemoved:Fire(player, counterId, foodId, slotIndex)
-			return true
+			warn("[DCS] RETURNING true")
+			return true, foodId
 		end
 	end
 
-	warn("[DisplayCounterService] FoodNotFound - no slot contained", foodId)
+	warn("[DCS] FoodNotFound - no match")
 	return false, "FoodNotFound"
 end
 

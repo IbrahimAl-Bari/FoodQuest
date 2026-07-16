@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DisplayCounterService = require(script.Parent:WaitForChild("DisplayCounterService"))
+local RestaurantService = require(script.Parent:WaitForChild("RestaurantService"))
 
 local DisplayCounterVisualService = {}
 
@@ -9,21 +10,26 @@ local COUNTER_MODEL_NAME = "DisplayCounter"
 
 local slottedFoods = {}
 
-local function getCounterModel()
-	local worldFolder = workspace:FindFirstChild("PrototypeWorld")
-	if not worldFolder then
-		return nil
-	end
-	local stationsFolder = worldFolder:FindFirstChild("Stations")
-	if not stationsFolder then
-		return nil
-	end
-	local model = stationsFolder:FindFirstChild(COUNTER_MODEL_NAME)
-	if model then
-		if model:IsA("Model") or model:IsA("BasePart") then
+local function getCounterModel(player)
+	local slot = RestaurantService:GetPlayerPlot(player)
+	if slot then
+		local model = slot:FindFirstChild(COUNTER_MODEL_NAME)
+		if model and (model:IsA("Model") or model:IsA("BasePart")) then
 			return model
 		end
 	end
+
+	local worldFolder = workspace:FindFirstChild("PrototypeWorld")
+	if worldFolder then
+		local stationsFolder = worldFolder:FindFirstChild("Stations")
+		if stationsFolder then
+			local model = stationsFolder:FindFirstChild(COUNTER_MODEL_NAME)
+			if model and (model:IsA("Model") or model:IsA("BasePart")) then
+				return model
+			end
+		end
+	end
+
 	return nil
 end
 
@@ -99,13 +105,12 @@ local function removePlayerFoods(player)
 end
 
 function DisplayCounterVisualService:Init()
-	local counter = getCounterModel()
-	if not counter then
-		warn("[DisplayCounterVisual] No DisplayCounter model found in workspace")
-		return
-	end
-
 	DisplayCounterService.FoodPlaced.Event:Connect(function(player, counterId, foodId, slotIndex)
+		local counter = getCounterModel(player)
+		if not counter then
+			return
+		end
+
 		local visual = createFoodVisual(foodId)
 		if not visual then
 			warn("[DisplayCounterVisual] No visual model for food:", foodId)

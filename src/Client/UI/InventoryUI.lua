@@ -1,193 +1,118 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Components = require(script.Parent:WaitForChild("Components"))
-local Theme = require(script.Parent:WaitForChild("Theme"))
-local IconRegistry = require(ReplicatedStorage:WaitForChild("Assets"):WaitForChild("IconRegistry"))
+local Theme = require(ReplicatedStorage.UI.Theme)
+local Slot = require(ReplicatedStorage.UI.Components.Slot)
+local Tooltip = require(ReplicatedStorage.UI.Components.Tooltip)
+local UIManager = require(ReplicatedStorage.UI.Components.UIManager)
 
 local InventoryUI = {}
 
-local function getIngredientIcon(entry)
-	local itemId = entry.id or entry.name
-	return IconRegistry.GetIcon(itemId)
-end
-
-local function createIngredientBadge(row, entry, accent)
-	local iconAssetId = getIngredientIcon(entry)
-	Components.CreateIconBadge(row, {
-		Size = UDim2.fromOffset(42, 42),
-		Position = UDim2.fromOffset(10, 10),
-		BackgroundColor3 = accent,
-		Image = iconAssetId,
-		Text = not iconAssetId and string.sub(entry.name, 1, 1) or nil,
-		TextColor3 = Theme.Colors.White,
-		ZIndex = 8,
-	})
-end
-
 function InventoryUI.new(playerGui)
-	local screenGui = Components.CreateScreenGui(playerGui, "FoodQuestInventory")
-
-	local toggleButton = Components.CreateButton(screenGui, {
-		Name = "InventoryButton",
-		Size = UDim2.fromOffset(150, 50),
-		Position = UDim2.new(0, 18, 0.5, -25),
-		Text = "  Inventory",
-		TextXAlignment = Enum.TextXAlignment.Left,
-		BackgroundColor3 = Theme.Colors.Primary,
-		TextSize = Theme.TextSize.Body,
-	})
-	Components.CreateIconBadge(toggleButton, {
-		Size = UDim2.fromOffset(28, 28),
-		Position = UDim2.fromOffset(10, 11),
-		BackgroundColor3 = Theme.Colors.Panel,
-		Text = "#",
-		TextSize = Theme.TextSize.Helper,
-		TextColor3 = Theme.Colors.PrimaryText,
-		ZIndex = 4,
-	})
-
-	local panel = Components.CreateCard(screenGui, {
-		Name = "InventoryPanel",
-		Size = UDim2.fromOffset(390, 440),
-		Position = UDim2.new(0, 184, 0.5, -220),
-		BackgroundColor3 = Theme.Colors.Panel,
-		ZIndex = 5,
-	})
-	Components.SetCardVisible(panel, false)
-
-	local sizeConstraint = Instance.new("UISizeConstraint")
-	sizeConstraint.MinSize = Vector2.new(310, 330)
-	sizeConstraint.MaxSize = Vector2.new(460, 540)
-	sizeConstraint.Parent = panel
-
-	Components.CreateIconBadge(panel, {
-		Size = UDim2.fromOffset(42, 42),
-		Position = UDim2.fromOffset(20, 20),
-		BackgroundColor3 = Theme.Colors.Primary,
-		Text = "#",
-		TextColor3 = Theme.Colors.White,
-		ZIndex = 7,
-	})
-	Components.CreateLabel(panel, {
-		Text = "Pantry",
-		Size = UDim2.new(1, -120, 0, 30),
-		Position = UDim2.fromOffset(74, 18),
-		TextSize = Theme.TextSize.Title,
-		Font = Theme.Fonts.Heading,
-		ZIndex = 7,
-	})
-	Components.CreateLabel(panel, {
-		Text = "Ingredients collected on your adventure",
-		Size = UDim2.new(1, -110, 0, 22),
-		Position = UDim2.fromOffset(74, 48),
-		TextColor3 = Theme.Colors.SecondaryText,
-		TextSize = Theme.TextSize.Helper,
-		ZIndex = 7,
-	})
-
-	local closeButton = Components.CreateButton(panel, {
-		Name = "CloseButton",
-		Size = UDim2.fromOffset(34, 34),
-		Position = UDim2.new(1, -54, 0, 18),
-		Text = "×",
-		TextSize = Theme.TextSize.Section,
-		BackgroundColor3 = Theme.Colors.SecondaryPanel,
-		TextColor3 = Theme.Colors.PrimaryText,
-		ZIndex = 8,
-	})
-
-	local list = Instance.new("ScrollingFrame")
-	list.Name = "IngredientList"
-	list.Size = UDim2.new(1, -40, 1, -114)
-	list.Position = UDim2.fromOffset(20, 92)
-	list.BackgroundTransparency = 1
-	list.BorderSizePixel = 0
-	list.CanvasSize = UDim2.fromOffset(0, 0)
-	list.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	list.ScrollBarThickness = 4
-	list.ScrollBarImageColor3 = Theme.Colors.Disabled
-	list.ZIndex = 7
-	list.Parent = panel
-
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, Theme.Spacing.Small)
-	layout.Parent = list
-
-	local function setVisible(isVisible)
-		Components.AnimatePanel(panel, isVisible)
+	local mainUI = playerGui:WaitForChild("MainUI")
+	if not mainUI then
+		warn("InventoryUI: MainUI not found in PlayerGui")
+		return { SetIngredients = function() end }
 	end
 
-	toggleButton.Activated:Connect(function()
-		setVisible(not panel.Visible)
-	end)
-	closeButton.Activated:Connect(function()
-		setVisible(false)
-	end)
+	local invUI = mainUI:FindFirstChild("InventoryUI")
+	if not invUI then
+		warn("InventoryUI: InventoryUI frame not found in MainUI")
+		return { SetIngredients = function() end }
+	end
+
+	local panel = invUI:FindFirstChild("InventoryPanel")
+	local closeBtn = panel and panel:FindFirstChild("CloseBtn")
+	local ingredientList = panel and panel:FindFirstChild("IngredientList")
+
+	for _, layout in pairs(ingredientList and ingredientList:GetChildren() or {}) do
+		if layout:IsA("UIListLayout") or layout:IsA("UIGridLayout") then
+			layout:Destroy()
+		end
+	end
+
+	local gridLayout = Instance.new("UIGridLayout")
+	gridLayout.CellSize = UDim2.new(0, 88, 0, 108)
+	gridLayout.CellPadding = UDim2.new(0, 10, 0, 10)
+	gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	gridLayout.Parent = ingredientList
+
+	UIManager.Register("Inventory", invUI)
+
+	if closeBtn then
+		closeBtn.Activated:Connect(function()
+			UIManager.Close("Inventory")
+		end)
+	end
+
+	local function positionTooltip(tooltip, slot, mouseX, mouseY)
+		local absPos = slot.AbsolutePosition
+		local screenX = absPos.X + (mouseX or 0) + 16
+		local screenY = absPos.Y + (mouseY or 0) + 16
+
+		tooltip.Position = UDim2.fromOffset(screenX, screenY)
+	end
 
 	local ui = {}
 
-	function ui:SetIngredients(entries)
-		Components.ClearDynamicChildren(list, function(child)
-			return child:IsA("Frame")
-		end)
+	function ui:Show()
+		if invUI then
+			invUI.Visible = true
+		end
+	end
 
-		if #entries == 0 then
-			local emptyCard = Components.CreateCard(list, {
-				Name = "EmptyState",
-				Size = UDim2.new(1, -6, 0, 94),
-				BackgroundColor3 = Theme.Colors.Background,
-				NoShadow = true,
-			})
-			Components.CreateIconBadge(emptyCard, {
-				Size = UDim2.fromOffset(38, 38),
-				Position = UDim2.new(0.5, -19, 0, 14),
-				BackgroundColor3 = Theme.Colors.SecondaryPanel,
-				Text = "+",
-				TextColor3 = Theme.Colors.SecondaryText,
-			})
-			Components.CreateLabel(emptyCard, {
-				Size = UDim2.new(1, -20, 0, 24),
-				Position = UDim2.new(0, 10, 1, -34),
-				Text = "Complete an obby to stock your pantry.",
-				TextColor3 = Theme.Colors.SecondaryText,
-				TextSize = Theme.TextSize.Helper,
-				TextXAlignment = Enum.TextXAlignment.Center,
-			})
+	function ui:SetIngredients(entries)
+		if not ingredientList then
 			return
 		end
 
-		for index, entry in entries do
-			local accent = index % 2 == 0 and Theme.Colors.Success or Theme.Colors.Primary
-			local row = Components.CreateCard(list, {
-				Name = "IngredientCard",
-				Size = UDim2.new(1, -6, 0, 62),
-				BackgroundColor3 = Theme.Colors.Background,
-				Radius = Theme.Radius.Medium,
-				NoShadow = true,
-			})
-			createIngredientBadge(row, entry, accent)
-			Components.CreateLabel(row, {
-				Size = UDim2.new(1, -130, 0, 24),
-				Position = UDim2.fromOffset(64, 10),
-				Text = entry.name,
-				Font = Theme.Fonts.BodyBold,
-			})
-			Components.CreateLabel(row, {
-				Size = UDim2.new(1, -130, 0, 18),
-				Position = UDim2.fromOffset(64, 33),
-				Text = "Ingredient",
-				TextColor3 = Theme.Colors.SecondaryText,
-				TextSize = Theme.TextSize.Helper,
-			})
-			Components.CreateLabel(row, {
-				Size = UDim2.fromOffset(52, 30),
-				Position = UDim2.new(1, -64, 0.5, -15),
-				Text = "x" .. entry.amount,
-				TextColor3 = accent,
-				TextSize = Theme.TextSize.Section,
-				TextXAlignment = Enum.TextXAlignment.Right,
-				Font = Theme.Fonts.Heading,
-			})
+		for _, child in pairs(ingredientList:GetChildren()) do
+			if not child:IsA("UIGridLayout") then
+				child:Destroy()
+			end
+		end
+
+		if #entries == 0 then
+			local emptyLabel = Instance.new("TextLabel")
+			emptyLabel.Name = "EmptyState"
+			emptyLabel.Size = UDim2.new(1, -20, 0, 40)
+			emptyLabel.Position = UDim2.new(0, 10, 0, 30)
+			emptyLabel.BackgroundTransparency = 1
+			emptyLabel.Font = Theme.Fonts.Body
+			emptyLabel.TextSize = Theme.TextSize.Normal
+			emptyLabel.Text = "Complete an obby to stock your pantry."
+			emptyLabel.TextColor3 = Theme.Colors.TextSecondary
+			emptyLabel.TextXAlignment = Enum.TextXAlignment.Center
+			emptyLabel.Parent = ingredientList
+			return
+		end
+
+		for _, entry in ipairs(entries) do
+			local slot = Slot.Create(ingredientList, string.sub(entry.name, 1, 1))
+			slot.Name = "IngredientSlot"
+			Slot.SetAmount(slot, entry.amount)
+
+			local tooltip = Tooltip.Create(invUI, entry.name)
+			tooltip.ZIndex = 50
+
+			local moveConnection = nil
+
+			slot.MouseEnter:Connect(function()
+				Tooltip.SetText(tooltip, entry.name)
+				positionTooltip(tooltip, slot)
+				Tooltip.Show(tooltip)
+
+				moveConnection = slot.MouseMoved:Connect(function(x, y)
+					positionTooltip(tooltip, slot, x, y)
+				end)
+			end)
+
+			slot.MouseLeave:Connect(function()
+				Tooltip.Hide(tooltip)
+				if moveConnection then
+					moveConnection:Disconnect()
+					moveConnection = nil
+				end
+			end)
 		end
 	end
 

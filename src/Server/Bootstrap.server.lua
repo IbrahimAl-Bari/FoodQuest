@@ -10,11 +10,13 @@ local ObbyRewardService = require(script.Parent.Services.ObbyRewardService)
 local PrototypeWorldService = require(script.Parent.Services.PrototypeWorldService)
 local DisplayCounterVisualService = require(script.Parent.Services.DisplayCounterVisualService)
 local CustomerService = require(script.Parent.Services.CustomerService)
+local RestaurantService = require(script.Parent.Services.RestaurantService)
 
 -- DataService must init first so player profiles are loaded before
 -- any other service accesses player data through GetData.
 DataService:Init()
 PrototypeWorldService:Init()
+RestaurantService:Init()
 InventoryService:Init()
 ProgressionService:Init()
 CurrencyService:Init()

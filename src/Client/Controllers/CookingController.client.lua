@@ -9,9 +9,11 @@ local Ingredients = require(ReplicatedStorage:WaitForChild("Config"):WaitForChil
 local Recipes = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("Recipes"))
 local RemoteNames = require(networkFolder:WaitForChild("RemoteNames"))
 local CookingUI = require(script.Parent.Parent.UI:WaitForChild("CookingUI"))
+local UIManager = require(ReplicatedStorage:WaitForChild("UI"):WaitForChild("Components"):WaitForChild("UIManager"))
 
 local openCookingMenu = networkFolder:WaitForChild(RemoteNames.OpenCookingMenu)
 local requestCook = networkFolder:WaitForChild(RemoteNames.RequestCook)
+local gameNotification = networkFolder:WaitForChild(RemoteNames.GameNotification)
 
 local function formatRequirements(ingredients)
 	local requirements = {}
@@ -43,5 +45,15 @@ end)
 cookingUI:SetRecipes(recipeEntries)
 
 openCookingMenu.OnClientEvent:Connect(function()
-	cookingUI:Show()
+	print("CookingController: openCookingMenu fired — calling UIManager.Toggle")
+	UIManager.Toggle("Cooking")
+	print("CookingController: openCookingMenu handler done")
+end)
+
+gameNotification.OnClientEvent:Connect(function(payload)
+	print("CookingController: GameNotification received — kind=" .. tostring(payload.kind))
+	if payload.kind == "CookingCompleted" then
+		print("CookingController: CookingCompleted — calling UIManager.Close")
+		UIManager.Close("Cooking")
+	end
 end)

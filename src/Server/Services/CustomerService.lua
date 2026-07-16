@@ -24,6 +24,12 @@ local SAD_ANIMATION_ID = "rbxassetid://6871073697"
 
 local activeCustomers = {}
 
+local cleanupCustomer
+local sendCustomerToExit
+local customerLeaveUnhappy
+local serveCustomer
+local onCustomerArrived
+
 local RECIPE_LIST
 do
 	local ids = {}
@@ -190,50 +196,30 @@ local function walkToPosition(model, targetPosition)
 	return true
 end
 
-local function onCustomerArrived(player)
+cleanupCustomer = function(player)
 	local customer = activeCustomers[player]
-	if not customer or customer.isLeaving then
+	if not customer then
 		return
 	end
-
-	local rootPart = getRootPart(customer.model)
-	if not rootPart then
-		return
+	if customer.patrolTimer then
+		task.cancel(customer.patrolTimer)
 	end
-
-	local gui = createOrderBillboard(rootPart, customer.recipe.displayName)
-	gui.Parent = rootPart
-	customer.gui = gui
-
-	local prompt = createServePrompt(customer.model, customer.recipe.displayName)
-	if not prompt then
-		gui:Destroy()
-		customer.gui = nil
-		return
+	if customer.gui then
+		customer.gui:Destroy()
 	end
-	customer.prompt = prompt
-
-	prompt.Triggered:Connect(function(triggeringPlayer)
-		if triggeringPlayer ~= player then
-			PlayerUIService:SendNotification(triggeringPlayer, {
-				kind = "CustomerNotYours",
-				message = "This customer is waiting for someone else.",
-			})
-			return
-		end
-		serveCustomer(player)
-	end)
-
-	CustomerService.CustomerChanged:Fire(player, customer.model, "Ordered", customer.recipe.outputFoodId)
-
-	customer.patrolTimer = task.delay(Customers.patienceSeconds, function()
-		if activeCustomers[player] == customer and not customer.isLeaving then
-			customerLeaveUnhappy(player)
-		end
-	end)
+	if customer.prompt then
+		customer.prompt:Destroy()
+	end
+	if customer.moveConnection then
+		customer.moveConnection:Disconnect()
+	end
+	if customer.model and customer.model.Parent then
+		customer.model:Destroy()
+	end
+	activeCustomers[player] = nil
 end
 
-local function sendCustomerToExit(player)
+sendCustomerToExit = function(player)
 	local customer = activeCustomers[player]
 	if not customer then
 		return
@@ -277,62 +263,7 @@ local function sendCustomerToExit(player)
 	end)
 end
 
-local function serveCustomer(player)
-	local customer = activeCustomers[player]
-	if not customer or customer.isLeaving then
-		return
-	end
-
-	local counterId = DisplayCounterService:GetDefaultCounterId()
-	local taken, reason = DisplayCounterService:TakeFoodById(player, counterId, customer.foodId)
-	if not taken then
-		PlayerUIService:SendNotification(player, {
-			kind = "CustomerNotServed",
-			message = "You don't have this order ready.",
-		})
-		return
-	end
-
-	CurrencyService:AddCoins(player, customer.saleValue)
-
-	PlayerUIService:SendNotification(player, {
-		kind = "CustomerPurchased",
-		foodId = customer.foodId,
-		coins = customer.saleValue,
-		foodName = customer.foodDisplayName,
-	})
-
-	if customer.patrolTimer then
-		task.cancel(customer.patrolTimer)
-		customer.patrolTimer = nil
-	end
-
-	if customer.gui then
-		customer.gui:Destroy()
-		customer.gui = nil
-	end
-	if customer.prompt then
-		customer.prompt:Destroy()
-		customer.prompt = nil
-	end
-
-	local humanoid = getHumanoid(customer.model)
-	if humanoid then
-		playAnimation(humanoid, HAPPY_ANIMATION_ID)
-	end
-
-	local rootPart = getRootPart(customer.model)
-	if rootPart then
-		createCoinEffect(rootPart, customer.saleValue)
-	end
-
-	CustomerService.CustomerChanged:Fire(player, customer.model, "Served", customer.foodId)
-
-	task.wait(1.5)
-	sendCustomerToExit(player)
-end
-
-local function customerLeaveUnhappy(player)
+customerLeaveUnhappy = function(player)
 	local customer = activeCustomers[player]
 	if not customer then
 		return
@@ -370,27 +301,121 @@ local function customerLeaveUnhappy(player)
 	sendCustomerToExit(player)
 end
 
-local function cleanupCustomer(player)
+serveCustomer = function(player)
+	warn("[SERVE] serveCustomer ENTER: player=", player and player.Name)
 	local customer = activeCustomers[player]
-	if not customer then
+	warn("[SERVE] activeCustomers[player]=", customer and "found" or "nil", "isLeaving=", customer and customer.isLeaving)
+	if not customer or customer.isLeaving then
+		warn("[SERVE] EARLY RETURN: no customer or isLeaving")
 		return
 	end
+	warn("[SERVE] customer.foodId=", customer.foodId, "foodDisplayName=", customer.foodDisplayName, "saleValue=", customer.saleValue)
+
+	local counterId = DisplayCounterService:GetDefaultCounterId()
+	warn("[SERVE] counterId=", counterId)
+	warn("[SERVE] Calling TakeFoodById with foodId=", customer.foodId)
+	local taken, reason = DisplayCounterService:TakeFoodById(player, counterId, customer.foodId)
+	warn("[SERVE] TakeFoodById returned: taken=", taken, "reason=", reason)
+	if not taken then
+		warn("[SERVE] EARLY RETURN: TakeFoodById failed")
+		PlayerUIService:SendNotification(player, {
+			kind = "CustomerNotServed",
+			message = "You don't have this order ready.",
+		})
+		return
+	end
+
+	warn("[SERVE] Calling AddCoins with saleValue=", customer.saleValue)
+	local coinSuccess, coinResult = CurrencyService:AddCoins(player, customer.saleValue)
+	warn("[SERVE] AddCoins returned: success=", coinSuccess, "result=", coinResult)
+
+	PlayerUIService:SendNotification(player, {
+		kind = "CustomerPurchased",
+		foodId = customer.foodId,
+		coins = customer.saleValue,
+		foodName = customer.foodDisplayName,
+	})
+
+	warn("[SERVE] Cancelling patrolTimer")
 	if customer.patrolTimer then
 		task.cancel(customer.patrolTimer)
+		customer.patrolTimer = nil
 	end
+	warn("[SERVE] Destroying gui and prompt")
 	if customer.gui then
 		customer.gui:Destroy()
+		customer.gui = nil
 	end
 	if customer.prompt then
 		customer.prompt:Destroy()
+		customer.prompt = nil
 	end
-	if customer.moveConnection then
-		customer.moveConnection:Disconnect()
+
+	warn("[SERVE] Playing happy animation")
+	local humanoid = getHumanoid(customer.model)
+	if humanoid then
+		playAnimation(humanoid, HAPPY_ANIMATION_ID)
 	end
-	if customer.model and customer.model.Parent then
-		customer.model:Destroy()
+
+	local rootPart = getRootPart(customer.model)
+	if rootPart then
+		createCoinEffect(rootPart, customer.saleValue)
 	end
-	activeCustomers[player] = nil
+
+	warn("[SERVE] Firing CustomerChanged")
+	CustomerService.CustomerChanged:Fire(player, customer.model, "Served", customer.foodId)
+
+	warn("[SERVE] Waiting 1.5s then sending to exit")
+	task.wait(1.5)
+	warn("[SERVE] Calling sendCustomerToExit")
+	sendCustomerToExit(player)
+	warn("[SERVE] serveCustomer COMPLETE")
+end
+
+onCustomerArrived = function(player)
+	local customer = activeCustomers[player]
+	if not customer or customer.isLeaving then
+		return
+	end
+
+	local rootPart = getRootPart(customer.model)
+	if not rootPart then
+		return
+	end
+
+	local gui = createOrderBillboard(rootPart, customer.recipe.displayName)
+	gui.Parent = rootPart
+	customer.gui = gui
+
+	local prompt = createServePrompt(customer.model, customer.recipe.displayName)
+	if not prompt then
+		gui:Destroy()
+		customer.gui = nil
+		return
+	end
+	customer.prompt = prompt
+
+	prompt.Triggered:Connect(function(triggeringPlayer)
+		warn("[SERVE] Prompt triggered: triggeringPlayer=", triggeringPlayer and triggeringPlayer.Name, "captured player=", player and player.Name)
+		if triggeringPlayer ~= player then
+			warn("[SERVE] Prompt blocked: not the owner")
+			PlayerUIService:SendNotification(triggeringPlayer, {
+				kind = "CustomerNotYours",
+				message = "This customer is waiting for someone else.",
+			})
+			return
+		end
+		warn("[SERVE] Prompt accepted, calling serveCustomer")
+		serveCustomer(player)
+	end)
+
+	CustomerService.CustomerChanged:Fire(player, customer.model, "Ordered", customer.recipe.outputFoodId)
+
+	customer.patrolTimer = task.delay(Customers.patienceSeconds, function()
+		if activeCustomers[player] == customer and not customer.isLeaving then
+			customerLeaveUnhappy(player)
+		end
+	end)
 end
 
 local function spawnCustomer(player)
@@ -438,6 +463,7 @@ local function spawnCustomer(player)
 	}
 
 	activeCustomers[player] = customer
+	warn("[SPAWN] Customer created: player=", player and player.Name, "recipeId=", recipeId, "foodId=", customer.foodId, "foodDisplayName=", customer.foodDisplayName, "saleValue=", customer.saleValue)
 
 	walkToPosition(model, inspectMarker.Position)
 
@@ -467,6 +493,10 @@ local function validateConfig()
 			error("Food requires a positive integer saleValue: " .. foodId)
 		end
 	end
+end
+
+function CustomerService:CleanupPlayer(player)
+	cleanupCustomer(player)
 end
 
 function CustomerService:Init()
